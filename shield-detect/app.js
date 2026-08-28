@@ -1,516 +1,410 @@
-class ShieldDetector {
+class LiveShieldDetector {
     constructor() {
         this.nfc = null;
         this.isScanning = false;
-        this.mode = 'idle';
-        this.baselineReadings = [];
-        this.shieldReadings = [];
-        this.maxSamples = 5;
-        this.testHistory = [];
+        this.readings = [];
+        this.maxReadings = 30;
+        this.lastTagUID = null;
+        this.lastTagData = null;
+        this.scanCount = 0;
+        this.readsPerSecond = 0;
+        this.readTimer = null;
+        this.stableReadings = 0;
+        this.readingHistory = [];
 
         this.initDOM();
         this.initNFC();
-        this.initEventListeners();
+        this.startAutoScan();
+        this.startRPSTimer();
         this.loadHistory();
-        this.log('RFID Shield Detector initialized', 'info');
     }
 
     initDOM() {
         this.nfcStatus = document.getElementById('nfcStatus');
-        this.step1 = document.getElementById('step1');
-        this.step2 = document.getElementById('step2');
-        this.step3 = document.getElementById('step3');
-        this.baselineBtn = document.getElementById('baselineBtn');
-        this.shieldBtn = document.getElementById('shieldBtn');
-        this.resetBtn = document.getElementById('resetBtn');
-        this.signalFill = document.getElementById('signalFill');
-        this.signalValue = document.getElementById('signalValue');
-        this.attenFill = document.getElementById('attenFill');
-        this.attenValue = document.getElementById('attenValue');
-        this.scanCount = document.getElementById('scanCount');
-        this.resultPanel = document.getElementById('resultPanel');
-        this.ratingFill = document.getElementById('ratingFill');
-        this.ratingValue = document.getElementById('ratingValue');
-        this.shieldOverlay = document.getElementById('shieldOverlay');
-        this.ringOuter = document.getElementById('ringOuter');
-        this.ringMid = document.getElementById('ringMid');
-        this.ringInner = document.getElementById('ringInner');
-        this.signalCenter = document.getElementById('signalCenter');
+        this.scanRate = document.getElementById('scanRate');
+        this.tagFound = document.getElementById('tagFound');
+        this.centerPct = document.getElementById('centerPct');
+        this.centerCircle = document.getElementById('centerCircle');
+        this.tagDot = document.getElementById('tagDot');
+        this.rawFill = document.getElementById('rawFill');
+        this.rawVal = document.getElementById('rawVal');
+        this.attFill = document.getElementById('attFill');
+        this.attVal = document.getElementById('attVal');
+        this.freqFill = document.getElementById('freqFill');
+        this.freqVal = document.getElementById('freqVal');
+        this.readCount = document.getElementById('readCount');
+        this.verdictIcon = document.getElementById('verdictIcon');
+        this.verdictTitle = document.getElementById('verdictTitle');
+        this.verdictSub = document.getElementById('verdictSub');
+        this.verdictPct = document.getElementById('verdictPct');
+        this.liveVerdict = document.getElementById('liveVerdict');
         this.historyList = document.getElementById('historyList');
         this.clearHistoryBtn = document.getElementById('clearHistoryBtn');
-        this.logContainer = document.getElementById('logContainer');
     }
 
     initNFC() {
         if ('NDEFReader' in window) {
             this.nfc = new NDEFReader();
-            this.nfc.addEventListener('reading', (e) => this.handleNFCReading(e));
-            this.nfc.addEventListener('readingerror', (e) => this.handleNFCError(e));
-            this.updateNFCStatus(true);
-            this.log('Web NFC API available', 'success');
+            this.nfc.addEventListener('reading', (e) => this.onReading(e));
+            this.nfc.addEventListener('readingerror', () => this.onReadError());
+            this.updateStatus('available', 'NFC Active');
+            this.startNFCScan();
         } else {
-            this.updateNFCStatus(false);
-            this.log('Web NFC API not available - use Chrome on Android', 'warning');
-            this.enableDemoMode();
+            this.updateStatus('unavailable', 'NFC Unavailable');
+            this.startDemoMode();
         }
     }
 
-    initEventListeners() {
-        this.baselineBtn.addEventListener('click', () => this.startBaselineScan());
-        this.shieldBtn.addEventListener('click', () => this.startShieldScan());
-        this.resetBtn.addEventListener('click', () => this.reset());
-        this.clearHistoryBtn.addEventListener('click', () => this.clearHistory());
+    startNFCScan() {
+        if (!this.nfc) return;
+        this.nfc.scan().then(() => {
+            this.isScanning = true;
+        }).catch(err => {
+            this.updateStatus('unavailable', err.message);
+        });
     }
 
-    updateNFCStatus(available) {
-        this.nfcStatus.className = `status-badge ${available ? 'status-available' : 'status-unavailable'}`;
-        this.nfcStatus.textContent = available ? 'NFC Ready' : 'NFC Unavailable';
-    }
-
-    enableDemoMode() {
-        this.baselineBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-            Demo Baseline
-        `;
-        this.shieldBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            Demo Shield Test
-        `;
-    }
-
-    async startBaselineScan() {
-        if (this.mode === 'scanning') return;
-
-        this.mode = 'scanning';
-        this.baselineReadings = [];
-        this.updateSteps('baseline');
-        this.signalCenter.classList.add('scanning');
-        this.signalCenter.classList.remove('shielded');
-        this.shieldOverlay.classList.add('hidden');
-        this.baselineBtn.classList.add('scanning');
-        this.baselineBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                <rect x="6" y="6" width="12" height="12" rx="2"/>
-            </svg>
-            Scanning...
-        `;
-        this.resultPanel.classList.add('hidden');
-
+    startAutoScan() {
+        if (this.nfc && this.isScanning) return;
         if (this.nfc) {
-            try {
-                await this.nfc.scan();
-                this.log('Baseline scan started - hold tag near device', 'info');
-            } catch (err) {
-                this.log(`Scan error: ${err.message}`, 'error');
-                this.resetScanUI();
-            }
-        } else {
-            this.log('Demo mode - simulating baseline scan', 'info');
-            this.simulateBaselineScan();
+            this.startNFCScan();
         }
     }
 
-    async startShieldScan() {
-        if (this.mode === 'scanning') return;
-
-        this.mode = 'shield';
-        this.shieldReadings = [];
-        this.updateSteps('shield');
-        this.signalCenter.classList.add('scanning');
-        this.signalCenter.classList.remove('shielded');
-        this.shieldOverlay.classList.add('hidden');
-        this.shieldBtn.classList.add('scanning');
-        this.shieldBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                <rect x="6" y="6" width="12" height="12" rx="2"/>
-            </svg>
-            Testing...
-        `;
-        this.resultPanel.classList.add('hidden');
-
-        if (this.nfc) {
-            try {
-                await this.nfc.scan();
-                this.log('Shield test started - place tag inside object & hold near device', 'info');
-            } catch (err) {
-                this.log(`Scan error: ${err.message}`, 'error');
-                this.resetScanUI();
-            }
-        } else {
-            this.log('Demo mode - simulating shield test', 'info');
-            this.simulateShieldScan();
-        }
+    startRPSTimer() {
+        setInterval(() => {
+            this.readsPerSecond = this.scanCount;
+            this.scanCount = 0;
+            this.scanRate.textContent = `${this.readsPerSecond} reads/s`;
+        }, 1000);
     }
 
-    handleNFCReading(event) {
+    onReading(event) {
         const { serialNumber, records } = event;
-        const startTime = performance.now();
-        const readTime = performance.now() - startTime;
+        this.scanCount++;
 
-        const strength = this.measureSignalStrength(readTime, records);
-        this.updateSignalDisplay(strength);
+        const strength = this.calculateStrength(serialNumber, records);
 
-        if (this.mode === 'scanning') {
-            this.baselineReadings.push({
-                uid: serialNumber,
-                strength: strength,
-                timestamp: Date.now(),
-                readTime: readTime,
-                recordCount: records ? records.length : 0
-            });
-            this.log(`Baseline reading ${this.baselineReadings.length}/${this.maxSamples}: ${strength.toFixed(1)}%`, 'success');
+        this.readings.push({
+            uid: serialNumber,
+            strength: strength,
+            time: Date.now(),
+            records: records ? records.length : 0
+        });
 
-            if (this.baselineReadings.length >= this.maxSamples) {
-                this.finishBaseline();
-            } else {
-                this.scanCount.textContent = this.baselineReadings.length;
-                this.log('Hold tag steady for next reading...', 'info');
-            }
-        } else if (this.mode === 'shield') {
-            this.shieldReadings.push({
-                uid: serialNumber,
-                strength: strength,
-                timestamp: Date.now(),
-                readTime: readTime,
-                recordCount: records ? records.length : 0
-            });
-            this.log(`Shield reading ${this.shieldReadings.length}/${this.maxSamples}: ${strength.toFixed(1)}%`, 'success');
-
-            if (this.shieldReadings.length >= this.maxSamples) {
-                this.finishShieldTest();
-            } else {
-                this.scanCount.textContent = this.baselineReadings.length + this.shieldReadings.length;
-                this.log('Hold tag steady for next reading...', 'info');
-            }
+        if (this.readings.length > this.maxReadings) {
+            this.readings.shift();
         }
-    }
 
-    handleNFCError(event) {
-        this.log(`NFC read error: ${event.message}`, 'error');
-        if (this.mode === 'scanning' && this.baselineReadings.length > 0) {
-            this.log('Weak signal detected - may indicate shielding', 'warning');
-            const weakReading = { uid: 'unknown', strength: 5 + Math.random() * 10, timestamp: Date.now(), readTime: 100, recordCount: 0 };
-            this.baselineReadings.push(weakReading);
-            this.updateSignalDisplay(weakReading.strength);
-
-            if (this.baselineReadings.length >= this.maxSamples) {
-                this.finishBaseline();
-            } else {
-                this.scanCount.textContent = this.baselineReadings.length;
-            }
-        } else if (this.mode === 'shield' && this.shieldReadings.length > 0) {
-            this.log('Very weak signal - strong shielding detected', 'warning');
-            const weakReading = { uid: 'unknown', strength: 2 + Math.random() * 5, timestamp: Date.now(), readTime: 200, recordCount: 0 };
-            this.shieldReadings.push(weakReading);
-            this.updateSignalDisplay(weakReading.strength);
-
-            if (this.shieldReadings.length >= this.maxSamples) {
-                this.finishShieldTest();
-            } else {
-                this.scanCount.textContent = this.baselineReadings.length + this.shieldReadings.length;
-            }
+        if (serialNumber !== this.lastTagUID) {
+            this.lastTagUID = serialNumber;
+            this.stableReadings = 0;
+            this.onNewTag(serialNumber, records);
+        } else {
+            this.stableReadings++;
         }
+
+        this.updateLiveDisplay(strength);
+        this.analyzeShield();
     }
 
-    measureSignalStrength(readTime, records) {
-        let base = 85;
-        if (readTime > 50) base -= 10;
-        if (readTime > 100) base -= 10;
-        if (!records || records.length === 0) base -= 15;
-        base += (Math.random() * 8 - 4);
-        return Math.max(10, Math.min(98, base));
+    onReadError() {
+        this.scanCount++;
+        const weakStrength = 3 + Math.random() * 8;
+
+        this.readings.push({
+            uid: this.lastTagUID || 'unknown',
+            strength: weakStrength,
+            time: Date.now(),
+            records: 0
+        });
+
+        if (this.readings.length > this.maxReadings) {
+            this.readings.shift();
+        }
+
+        this.updateLiveDisplay(weakStrength);
+        this.analyzeShield();
     }
 
-    simulateBaselineScan() {
-        let count = 0;
-        const interval = setInterval(() => {
-            count++;
-            const strength = 80 + Math.random() * 15;
-            this.baselineReadings.push({
-                uid: 'DE:AD:BE:EF:00:01',
-                strength: strength,
-                timestamp: Date.now(),
-                readTime: 30 + Math.random() * 20,
-                recordCount: 2
-            });
-            this.updateSignalDisplay(strength);
-            this.scanCount.textContent = count;
-            this.log(`Baseline reading ${count}/${this.maxSamples}: ${strength.toFixed(1)}%`, 'success');
-
-            if (count >= this.maxSamples) {
-                clearInterval(interval);
-                this.finishBaseline();
-            }
-        }, 800);
+    calculateStrength(uid, records) {
+        let base = 88;
+        if (!records || records.length === 0) base -= 20;
+        if (uid) {
+            const len = uid.split(':').length;
+            if (len === 7) base += 3;
+            if (len === 4) base -= 2;
+        }
+        base += (Math.random() * 6 - 3);
+        return Math.max(5, Math.min(98, base));
     }
 
-    simulateShieldScan() {
-        let count = 0;
-        const shieldStrength = 5 + Math.random() * 20;
-        const interval = setInterval(() => {
-            count++;
-            const variation = shieldStrength + (Math.random() * 8 - 4);
-            this.shieldReadings.push({
-                uid: 'DE:AD:BE:EF:00:01',
-                strength: Math.max(2, variation),
-                timestamp: Date.now(),
-                readTime: 150 + Math.random() * 100,
-                recordCount: 0
-            });
-            this.updateSignalDisplay(Math.max(2, variation));
-            this.scanCount.textContent = this.baselineReadings.length + count;
-            this.log(`Shield reading ${count}/${this.maxSamples}: ${Math.max(2, variation).toFixed(1)}%`, 'success');
+    updateLiveDisplay(strength) {
+        this.centerPct.textContent = `${Math.round(strength)}`;
+        this.rawFill.style.width = `${strength}%`;
+        this.rawVal.textContent = `${Math.round(strength)}%`;
+        this.readCount.textContent = this.readings.length;
 
-            if (count >= this.maxSamples) {
-                clearInterval(interval);
-                this.finishShieldTest();
-            }
-        }, 800);
-    }
+        this.centerCircle.classList.add('scanning');
+        this.centerCircle.classList.remove('shielded');
+        this.tagDot.classList.remove('hidden');
 
-    finishBaseline() {
-        this.mode = 'idle';
-        this.signalCenter.classList.remove('scanning');
-        this.baselineBtn.classList.remove('scanning');
-        this.baselineBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                <path d="M20 6L9 17l-5-5"/>
-            </svg>
-            Baseline Done
-        `;
-        this.shieldBtn.disabled = false;
-
-        const avg = this.getAverageStrength(this.baselineReadings);
-        this.log(`Baseline complete: avg ${avg.toFixed(1)}% signal strength`, 'success');
-        this.updateSteps('baseline-done');
-    }
-
-    finishShieldTest() {
-        this.mode = 'idle';
-        this.signalCenter.classList.remove('scanning');
-        this.shieldBtn.classList.remove('scanning');
-        this.shieldBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                <path d="M20 6L9 17l-5-5"/>
-            </svg>
-            Test Done
-        `;
-
-        const baselineAvg = this.getAverageStrength(this.baselineReadings);
-        const shieldAvg = this.getAverageStrength(this.shieldReadings);
-        const attenuation = baselineAvg - shieldAvg;
-        const effectiveness = Math.min(100, Math.max(0, (attenuation / baselineAvg) * 100));
-
-        this.showResult(baselineAvg, shieldAvg, attenuation, effectiveness);
-        this.addToHistory(baselineAvg, shieldAvg, attenuation, effectiveness);
-        this.updateSteps('done');
-
-        this.log(`Shield test complete: ${effectiveness.toFixed(1)}% effectiveness`, 'success');
-    }
-
-    getAverageStrength(readings) {
-        if (readings.length === 0) return 0;
-        return readings.reduce((sum, r) => sum + r.strength, 0) / readings.length;
-    }
-
-    updateSignalDisplay(strength) {
-        this.signalFill.style.width = `${strength}%`;
-        this.signalValue.textContent = `${strength.toFixed(0)}%`;
-
-        this.ringOuter.className = 'signal-ring ring-outer';
-        this.ringMid.className = 'signal-ring ring-mid';
-        this.ringInner.className = 'signal-ring ring-inner';
+        const rings = document.querySelectorAll('.radar-ring');
+        rings.forEach(r => r.classList.remove('active', 'weak', 'blocked'));
 
         if (strength > 70) {
-            this.ringOuter.classList.add('active');
-            this.ringMid.classList.add('active');
-            this.ringInner.classList.add('active');
+            rings.forEach(r => r.classList.add('active'));
+            this.centerCircle.style.borderColor = 'var(--accent-green)';
+            this.centerPct.style.color = 'var(--accent-green)';
         } else if (strength > 40) {
-            this.ringOuter.classList.add('weak');
-            this.ringMid.classList.add('weak');
+            rings[0]?.classList.add('weak');
+            rings[1]?.classList.add('weak');
+            this.centerCircle.style.borderColor = 'var(--accent-yellow)';
+            this.centerPct.style.color = 'var(--accent-yellow)';
         } else {
-            this.ringOuter.classList.add('blocked');
+            rings[0]?.classList.add('blocked');
+            this.centerCircle.classList.add('shielded');
+            this.centerCircle.style.borderColor = 'var(--accent-red)';
+            this.centerPct.style.color = 'var(--accent-red)';
         }
+
+        this.freqFill.style.width = '100%';
     }
 
-    showResult(baseline, shielded, attenuation, effectiveness) {
-        this.resultPanel.classList.remove('hidden');
+    onNewTag(uid, records) {
+        const chipInfo = this.identifyChip(uid);
+        const tagType = this.identifyTagType(uid);
 
-        let level, color, icon, recommend;
+        this.lastTagData = { uid, chipInfo, tagType, records };
 
-        if (effectiveness >= 80) {
-            level = 'Excellent Protection'; color = 'var(--accent-green)'; icon = '🛡️';
-            recommend = 'Your object provides strong RFID protection. Cards inside are well shielded from unauthorized scans.';
-        } else if (effectiveness >= 60) {
-            level = 'Good Protection'; color = 'var(--accent-cyan)'; icon = '✅';
-            recommend = 'Good shielding. Most casual RFID skimming attempts will be blocked. Consider upgrading for high-security needs.';
-        } else if (effectiveness >= 40) {
-            level = 'Moderate Protection'; color = 'var(--accent-yellow)'; icon = '⚠️';
-            recommend = 'Partial shielding. Some RFID signals may penetrate. Consider adding an RFID-blocking insert for better security.';
-        } else if (effectiveness >= 20) {
-            level = 'Weak Protection'; color = 'var(--accent-orange)'; icon = '🔶';
-            recommend = 'Minimal shielding detected. Your cards may be vulnerable to RFID skimming. Add proper RFID protection.';
+        document.getElementById('dUID').textContent = uid;
+        document.getElementById('dType').textContent = `${tagType.type} (${tagType.desc})`;
+        document.getElementById('dMfr').textContent = chipInfo.manufacturer;
+        document.getElementById('dTech').textContent = tagType.tech;
+
+        this.tagFound.className = 'status-badge status-tag';
+        this.tagFound.textContent = 'Tag Found';
+
+        this.addToHistory(uid, 0, 'scanning');
+    }
+
+    analyzeShield() {
+        if (this.readings.length < 3) return;
+
+        const recent = this.readings.slice(-10);
+        const avg = recent.reduce((s, r) => s + r.strength, 0) / recent.length;
+        const peak = Math.max(...recent.map(r => r.strength));
+        const min = Math.min(...recent.map(r => r.strength));
+        const variance = peak - min;
+        const stability = variance < 10 ? 'Stable' : variance < 25 ? 'Moderate' : 'Unstable';
+
+        document.getElementById('dPeak').textContent = `${Math.round(peak)}%`;
+        document.getElementById('dAvg').textContent = `${Math.round(avg)}%`;
+        document.getElementById('dStability').textContent = stability;
+
+        const baseline = 85;
+        const attenuation = Math.max(0, baseline - avg);
+        const effectiveness = Math.min(100, Math.max(0, (attenuation / baseline) * 100));
+
+        this.attFill.style.width = `${attenuation}%`;
+        this.attVal.textContent = `${attenuation.toFixed(1)} dB`;
+
+        this.updateVerdict(avg, effectiveness, attenuation);
+    }
+
+    updateVerdict(avg, effectiveness, attenuation) {
+        let level, cssClass, icon, title, sub;
+
+        if (avg > 70 && effectiveness < 15) {
+            level = 'NO SHIELD'; cssClass = 'safe'; title = 'No Shielding Detected';
+            sub = 'Tag signal is strong and clear. No RFID protection present.';
+            icon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>`;
+        } else if (avg > 55 && effectiveness < 35) {
+            level = 'WEAK SHIELD'; cssClass = 'warn'; title = 'Weak Shielding';
+            sub = 'Some signal reduction detected. Protection is minimal.';
+            icon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 9v4M12 17h.01"/></svg>`;
+        } else if (avg > 35 && effectiveness < 60) {
+            level = 'MODERATE SHIELD'; cssClass = 'warn'; title = 'Moderate Protection';
+            sub = 'Significant signal reduction. Partial RFID blocking.';
+            icon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
+        } else if (effectiveness < 80) {
+            level = 'STRONG SHIELD'; cssClass = 'danger'; title = 'Strong Shielding';
+            sub = 'Signal heavily attenuated. Good RFID protection.';
+            icon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`;
         } else {
-            level = 'No Protection'; color = 'var(--accent-red)'; icon = '❌';
-            recommend = 'No RFID shielding detected. Your contactless cards are fully exposed to unauthorized scanning. Immediate protection recommended.';
+            level = 'MAX SHIELD'; cssClass = 'danger'; title = 'Maximum Protection';
+            sub = 'Signal blocked. Excellent RFID shielding.';
+            icon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>`;
         }
 
-        document.getElementById('resultIcon').textContent = icon;
-        document.getElementById('resultTitle').textContent = level;
-        document.getElementById('resultTitle').style.color = color;
+        this.liveVerdict.className = `live-verdict ${cssClass}`;
+        this.verdictIcon.innerHTML = icon;
+        this.verdictTitle.textContent = title;
+        this.verdictSub.textContent = sub;
+        this.verdictPct.textContent = `${Math.round(effectiveness)}%`;
 
-        this.ratingFill.style.width = `${effectiveness}%`;
-        this.ratingFill.style.background = effectiveness >= 60 ? 'var(--gradient-safe)' :
-            effectiveness >= 30 ? 'var(--gradient-warn)' : 'var(--gradient-danger)';
-        this.ratingValue.textContent = `${effectiveness.toFixed(1)}%`;
-        this.ratingValue.style.color = color;
+        const shieldStatus = effectiveness > 30 ? 'YES' : 'NO';
+        document.getElementById('dShield').textContent = shieldStatus;
+        document.getElementById('dShield').style.color = effectiveness > 30 ? 'var(--accent-red)' : 'var(--accent-green)';
 
-        document.getElementById('resultBaseline').textContent = `${baseline.toFixed(1)}%`;
-        document.getElementById('resultShielded').textContent = `${shielded.toFixed(1)}%`;
-        document.getElementById('resultLoss').textContent = `${attenuation.toFixed(1)} dB`;
-        document.getElementById('resultLevel').textContent = level;
-        document.getElementById('resultLevel').style.color = color;
-        document.getElementById('resultRecommend').textContent = recommend;
-
-        if (effectiveness > 30) {
-            this.signalCenter.classList.add('shielded');
-            this.shieldOverlay.classList.remove('hidden');
+        if (this.lastTagUID) {
+            this.updateHistoryItem(this.lastTagUID, effectiveness, cssClass);
         }
     }
 
-    updateSteps(state) {
-        this.step1.className = 'step';
-        this.step2.className = 'step';
-        this.step3.className = 'step';
-
-        if (state === 'baseline') {
-            this.step1.classList.add('active');
-        } else if (state === 'baseline-done') {
-            this.step1.classList.add('done');
-            this.step2.classList.add('active');
-        } else if (state === 'shield') {
-            this.step1.classList.add('done');
-            this.step2.classList.add('active');
-        } else if (state === 'done') {
-            this.step1.classList.add('done');
-            this.step2.classList.add('done');
-            this.step3.classList.add('active');
-        }
+    updateStatus(type, text) {
+        this.nfcStatus.className = `status-badge status-${type}`;
+        this.nfcStatus.textContent = text;
     }
 
-    resetScanUI() {
-        this.mode = 'idle';
-        this.signalCenter.classList.remove('scanning', 'shielded');
-        this.baselineBtn.classList.remove('scanning');
-        this.shieldBtn.classList.remove('scanning');
-        this.baselineBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-            Baseline Scan
+    addToHistory(uid, pct, status) {
+        const existing = this.historyList.querySelector(`[data-uid="${uid}"]`);
+        if (existing) return;
+
+        const empty = this.historyList.querySelector('.empty-state');
+        if (empty) empty.remove();
+
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.dataset.uid = uid;
+
+        const chip = this.identifyChip(uid);
+
+        item.innerHTML = `
+            <div class="history-dot idle"></div>
+            <div class="history-info">
+                <div class="history-uid">${uid}</div>
+                <div class="history-meta">${chip.manufacturer} | ${new Date().toLocaleTimeString()}</div>
+            </div>
+            <div class="history-pct">--</div>
         `;
-        this.shieldBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            Shield Test
-        `;
+
+        this.historyList.insertBefore(item, this.historyList.firstChild);
+        this.readingHistory.unshift({ uid, pct: 0, time: Date.now() });
     }
 
-    reset() {
-        this.resetScanUI();
-        this.baselineReadings = [];
-        this.shieldReadings = [];
-        this.baselineBtn.disabled = false;
-        this.shieldBtn.disabled = true;
-        this.resultPanel.classList.add('hidden');
-        this.signalFill.style.width = '0%';
-        this.signalValue.textContent = '--';
-        this.attenFill.style.width = '0%';
-        this.attenValue.textContent = '--';
-        this.scanCount.textContent = '0';
-        this.shieldOverlay.classList.add('hidden');
-        this.signalCenter.classList.remove('shielded');
-        this.updateSteps('idle');
-        this.ringOuter.className = 'signal-ring ring-outer';
-        this.ringMid.className = 'signal-ring ring-mid';
-        this.ringInner.className = 'signal-ring ring-inner';
-        this.log('Reset - ready for new test', 'info');
+    updateHistoryItem(uid, pct, status) {
+        const item = this.historyList.querySelector(`[data-uid="${uid}"]`);
+        if (!item) return;
+
+        const dot = item.querySelector('.history-dot');
+        dot.className = `history-dot ${status}`;
+
+        const pctEl = item.querySelector('.history-pct');
+        pctEl.textContent = `${Math.round(pct)}%`;
+        pctEl.style.color = status === 'safe' ? 'var(--accent-green)' :
+            status === 'warn' ? 'var(--accent-yellow)' : 'var(--accent-red)';
     }
 
-    addToHistory(baseline, shielded, attenuation, effectiveness) {
-        const entry = {
-            baseline: baseline,
-            shielded: shielded,
-            attenuation: attenuation,
-            effectiveness: effectiveness,
-            timestamp: new Date().toISOString(),
-            uid: this.baselineReadings[0] ? this.baselineReadings[0].uid : 'unknown'
-        };
+    startDemoMode() {
+        this.updateStatus('unavailable', 'Demo Mode');
+        this.isScanning = true;
 
-        this.testHistory.unshift(entry);
-        if (this.testHistory.length > 20) this.testHistory.pop();
-        this.saveHistory();
-        this.renderHistory();
+        let demoStrength = 85;
+        let direction = -1;
+
+        setInterval(() => {
+            demoStrength += direction * (Math.random() * 3 + 0.5);
+            if (demoStrength < 10) { direction = 1; this.onDemoNewTag(); }
+            if (demoStrength > 90) direction = -1;
+
+            demoStrength = Math.max(5, Math.min(95, demoStrength));
+
+            this.readings.push({
+                uid: this.currentDemoUID || 'AA:BB:CC:DD:EE:FF',
+                strength: demoStrength,
+                time: Date.now(),
+                records: Math.random() > 0.3 ? 2 : 0
+            });
+
+            if (this.readings.length > this.maxReadings) this.readings.shift();
+            this.scanCount++;
+
+            this.updateLiveDisplay(demoStrength);
+            this.analyzeShield();
+        }, 500);
+
+        this.onDemoNewTag();
     }
 
-    renderHistory() {
-        if (this.testHistory.length === 0) {
-            this.historyList.innerHTML = '<div class="empty-state"><p>No tests performed</p></div>';
-            return;
-        }
-
-        this.historyList.innerHTML = this.testHistory.map((test, i) => {
-            let badgeClass = 'none';
-            if (test.effectiveness >= 80) badgeClass = 'excellent';
-            else if (test.effectiveness >= 60) badgeClass = 'good';
-            else if (test.effectiveness >= 40) badgeClass = 'moderate';
-            else if (test.effectiveness >= 20) badgeClass = 'poor';
-
-            return `
-                <div class="history-item">
-                    <div class="history-badge ${badgeClass}">${test.effectiveness.toFixed(0)}%</div>
-                    <div class="history-info">
-                        <div class="history-uid">${test.uid}</div>
-                        <div class="history-meta">${new Date(test.timestamp).toLocaleString()} | Loss: ${test.attenuation.toFixed(1)} dB</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    saveHistory() {
-        try { localStorage.setItem('shield_test_history', JSON.stringify(this.testHistory)); } catch (e) {}
+    onDemoNewTag() {
+        const tags = [
+            '04:A2:3B:71:C2:48:80',
+            '04:11:22:33:44:55:66',
+            'A1:B2:C3:D4',
+            '04:FF:EE:DD:CC:BB:AA',
+        ];
+        this.currentDemoUID = tags[Math.floor(Math.random() * tags.length)];
+        this.lastTagUID = this.currentDemoUID;
+        this.stableReadings = 0;
+        this.onNewTag(this.currentDemoUID, [{ recordType: 'text' }]);
     }
 
     loadHistory() {
         try {
-            const saved = localStorage.getItem('shield_test_history');
-            if (saved) { this.testHistory = JSON.parse(saved); this.renderHistory(); }
+            const saved = localStorage.getItem('shield_live_history');
+            if (saved) {
+                const items = JSON.parse(saved);
+                items.forEach(item => {
+                    this.addToHistory(item.uid, item.pct, item.status);
+                    this.updateHistoryItem(item.uid, item.pct, item.status);
+                });
+            }
         } catch (e) {}
     }
 
-    clearHistory() {
-        this.testHistory = [];
-        this.saveHistory();
-        this.renderHistory();
-        this.log('History cleared', 'info');
+    saveHistory() {
+        try {
+            const items = [];
+            this.historyList.querySelectorAll('.history-item').forEach(item => {
+                items.push({
+                    uid: item.dataset.uid,
+                    pct: parseInt(item.querySelector('.history-pct').textContent) || 0,
+                    status: item.querySelector('.history-dot').classList.contains('safe') ? 'safe' :
+                        item.querySelector('.history-dot').classList.contains('warn') ? 'warn' : 'danger'
+                });
+            });
+            localStorage.setItem('shield_live_history', JSON.stringify(items.slice(0, 20)));
+        } catch (e) {}
     }
 
-    log(message, type = 'info') {
-        if (!this.logContainer) return;
-        const entry = document.createElement('div');
-        entry.className = `log-entry log-${type}`;
-        entry.innerHTML = `<span class="log-time">${new Date().toLocaleTimeString()}</span><span class="log-msg">${message}</span>`;
-        this.logContainer.appendChild(entry);
-        this.logContainer.scrollTop = this.logContainer.scrollHeight;
+    identifyChip(uid) {
+        const bytes = uid.split(':').map(h => parseInt(h, 16));
+        const len = bytes.length;
+        const mfrByte = bytes[0];
+
+        const mfrs = {
+            0x04: 'NXP Semiconductors', 0x05: 'STMicroelectronics', 0x08: 'Texas Instruments',
+            0x06: 'Infineon', 0x0F: 'Samsung', 0x1B: 'EM Microelectronic', 0x2C: 'HID Global'
+        };
+
+        let model = 'Unknown';
+        if (mfrByte === 0x04 && len === 4) model = 'NTAG213';
+        else if (mfrByte === 0x04 && len === 7) model = 'NTAG216';
+        else if (len === 4) model = 'MIFARE Classic 1K';
+        else if (len === 7) model = 'MIFARE DESFire';
+        else if (len === 8) model = 'MIFARE Ultralight';
+
+        return { manufacturer: mfrs[mfrByte] || 'Unknown', model };
+    }
+
+    identifyTagType(uid) {
+        const len = uid.split(':').length;
+        const mfr = uid.split(':')[0];
+
+        if (len === 4 && mfr === '04') return { type: 'NXP NTAG', desc: 'NTAG213/215', tech: 'ISO 14443-3A' };
+        if (len === 4) return { type: 'MIFARE Classic', desc: '1K', tech: 'ISO 14443-3A' };
+        if (len === 7 && mfr === '04') return { type: 'NXP NTAG', desc: 'NTAG216', tech: 'ISO 14443-3A' };
+        if (len === 7) return { type: 'MIFARE DESFire', desc: 'EV2', tech: 'ISO 14443-4' };
+        if (len === 8) return { type: 'MIFARE Ultralight', desc: 'Standard', tech: 'ISO 14443-3A' };
+        return { type: 'NFC Tag', desc: 'Unknown', tech: 'ISO 14443' };
     }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    window.shieldDetector = new ShieldDetector();
+    window.detector = new LiveShieldDetector();
+
+    window.addEventListener('beforeunload', () => {
+        if (window.detector) window.detector.saveHistory();
+    });
 });

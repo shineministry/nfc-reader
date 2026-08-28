@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#0a0e17">
-    <title>RFID Shield Detector</title>
+    <title>RFID Shield Detector - Live</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -12,160 +12,107 @@
     <div class="app-container">
         <header>
             <div class="logo">
-                <div class="shield-icon">
+                <div class="shield-icon pulse-glow">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
                 </div>
                 <h1>RFID Shield Detector</h1>
             </div>
-            <div class="status-bar">
-                <span id="nfcStatus" class="status-badge status-unknown">Checking NFC...</span>
+            <div class="live-badge">
+                <span class="live-dot"></span>
+                LIVE
             </div>
         </header>
 
+        <div class="status-bar">
+            <span id="nfcStatus" class="status-badge status-unknown">Starting...</span>
+            <span id="scanRate" class="status-badge status-info">0 reads/s</span>
+            <span id="tagFound" class="status-badge status-idle">No Tag</span>
+        </div>
+
         <main>
-            <div class="instruction-panel">
-                <div class="step active" id="step1">
-                    <div class="step-num">1</div>
-                    <div class="step-info">
-                        <span class="step-title">Baseline Scan</span>
-                        <span class="step-desc">Scan RFID tag directly (no object)</span>
+            <div class="live-signal-section">
+                <div class="signal-radar">
+                    <div class="radar-bg">
+                        <div class="radar-ring r1"></div>
+                        <div class="radar-ring r2"></div>
+                        <div class="radar-ring r3"></div>
+                        <div class="radar-ring r4"></div>
+                        <div class="radar-sweep"></div>
                     </div>
-                </div>
-                <div class="step-arrow">→</div>
-                <div class="step" id="step2">
-                    <div class="step-num">2</div>
-                    <div class="step-info">
-                        <span class="step-title">Shield Test</span>
-                        <span class="step-desc">Place tag inside object & scan</span>
+                    <div class="signal-center-circle" id="centerCircle">
+                        <span class="center-pct" id="centerPct">--</span>
+                        <span class="center-label">SIGNAL</span>
                     </div>
-                </div>
-                <div class="step-arrow">→</div>
-                <div class="step" id="step3">
-                    <div class="step-num">3</div>
-                    <div class="step-info">
-                        <span class="step-title">Result</span>
-                        <span class="step-desc">See shield effectiveness</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="scan-area">
-                <div class="signal-visual">
-                    <div class="signal-ring ring-outer" id="ringOuter"></div>
-                    <div class="signal-ring ring-mid" id="ringMid"></div>
-                    <div class="signal-ring ring-inner" id="ringInner"></div>
-                    <div class="signal-center">
-                        <div class="signal-icon" id="signalIcon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M6 9a6 6 0 0 1 12 0"/>
-                                <path d="M9 9a3 3 0 0 1 6 0"/>
-                                <circle cx="12" cy="12" r="1"/>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="shield-overlay hidden" id="shieldOverlay">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                            <line x1="9" y1="9" x2="15" y2="15"/>
-                            <line x1="15" y1="9" x2="9" y2="15"/>
-                        </svg>
-                    </div>
+                    <div class="tag-dot hidden" id="tagDot"></div>
                 </div>
 
-                <div class="signal-meters">
-                    <div class="meter">
-                        <span class="meter-label">Signal Strength</span>
-                        <div class="meter-bar">
-                            <div class="meter-fill" id="signalFill"></div>
-                        </div>
-                        <span class="meter-value" id="signalValue">--</span>
+                <div class="live-meters">
+                    <div class="meter-row">
+                        <span class="meter-label">Raw Signal</span>
+                        <div class="meter-bar"><div class="meter-fill" id="rawFill"></div></div>
+                        <span class="meter-val" id="rawVal">0%</span>
                     </div>
-                    <div class="meter">
+                    <div class="meter-row">
                         <span class="meter-label">Attenuation</span>
-                        <div class="meter-bar">
-                            <div class="meter-fill attenuation" id="attenFill"></div>
-                        </div>
-                        <span class="meter-value" id="attenValue">--</span>
+                        <div class="meter-bar"><div class="meter-fill att" id="attFill"></div></div>
+                        <span class="meter-val" id="attVal">0 dB</span>
                     </div>
-                    <div class="meter">
-                        <span class="meter-label">Scan Count</span>
-                        <span class="meter-value" id="scanCount">0</span>
+                    <div class="meter-row">
+                        <span class="meter-label">Frequency</span>
+                        <div class="meter-bar"><div class="meter-fill freq" id="freqFill"></div></div>
+                        <span class="meter-val" id="freqVal">13.56 MHz</span>
+                    </div>
+                    <div class="meter-row">
+                        <span class="meter-label">Reads</span>
+                        <span class="meter-val wide" id="readCount">0</span>
                     </div>
                 </div>
             </div>
 
-            <div class="controls">
-                <button id="baselineBtn" class="btn btn-primary btn-large">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M5 12h14M12 5l7 7-7 7"/>
+            <div class="live-verdict" id="liveVerdict">
+                <div class="verdict-icon" id="verdictIcon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 8v4M12 16h.01"/>
                     </svg>
-                    Baseline Scan
-                </button>
-                <button id="shieldBtn" class="btn btn-secondary btn-large" disabled>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    </svg>
-                    Shield Test
-                </button>
-                <button id="resetBtn" class="btn btn-outline">Reset</button>
+                </div>
+                <div class="verdict-text">
+                    <span class="verdict-title" id="verdictTitle">Waiting for tag...</span>
+                    <span class="verdict-sub" id="verdictSub">Bring an RFID/NFC tag into range</span>
+                </div>
+                <div class="verdict-pct" id="verdictPct">--</div>
             </div>
 
-            <div class="result-panel hidden" id="resultPanel">
-                <div class="result-header">
-                    <div class="result-icon" id="resultIcon">🛡</div>
-                    <div class="result-title" id="resultTitle">Analyzing...</div>
-                </div>
-                <div class="result-body">
-                    <div class="shield-rating">
-                        <span class="rating-label">Shield Effectiveness</span>
-                        <div class="rating-bar">
-                            <div class="rating-fill" id="ratingFill"></div>
-                            <div class="rating-markers">
-                                <span style="left:0%">None</span>
-                                <span style="left:25%">Weak</span>
-                                <span style="left:50%">Fair</span>
-                                <span style="left:75%">Good</span>
-                                <span style="left:95%">Strong</span>
-                            </div>
-                        </div>
-                        <span class="rating-value" id="ratingValue">--</span>
+            <div class="live-details">
+                <div class="detail-card">
+                    <div class="detail-card-title">Last Tag</div>
+                    <div class="detail-rows">
+                        <div class="d-row"><span class="d-label">UID</span><span class="d-val mono" id="dUID">--</span></div>
+                        <div class="d-row"><span class="d-label">Type</span><span class="d-val" id="dType">--</span></div>
+                        <div class="d-row"><span class="d-label">Manufacturer</span><span class="d-val" id="dMfr">--</span></div>
+                        <div class="d-row"><span class="d-label">Technology</span><span class="d-val" id="dTech">--</span></div>
                     </div>
-                    <div class="result-details">
-                        <div class="detail-row">
-                            <span class="detail-label">Baseline Signal</span>
-                            <span class="detail-value" id="resultBaseline">--</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Shielded Signal</span>
-                            <span class="detail-value" id="resultShielded">--</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Signal Loss</span>
-                            <span class="detail-value" id="resultLoss">--</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Protection Level</span>
-                            <span class="detail-value" id="resultLevel">--</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Recommendation</span>
-                            <span class="detail-value" id="resultRecommend">--</span>
-                        </div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-title">Signal Analysis</div>
+                    <div class="detail-rows">
+                        <div class="d-row"><span class="d-label">Peak Strength</span><span class="d-val" id="dPeak">--</span></div>
+                        <div class="d-row"><span class="d-label">Avg Strength</span><span class="d-val" id="dAvg">--</span></div>
+                        <div class="d-row"><span class="d-label">Stability</span><span class="d-val" id="dStability">--</span></div>
+                        <div class="d-row"><span class="d-label">Shield Detected</span><span class="d-val" id="dShield">--</span></div>
                     </div>
                 </div>
             </div>
 
             <div class="history-section">
                 <div class="section-header">
-                    <h3>Test History</h3>
+                    <h3>Scan Log</h3>
                     <button class="btn btn-small btn-outline" id="clearHistoryBtn">Clear</button>
                 </div>
                 <div class="history-list" id="historyList">
-                    <div class="empty-state">
-                        <p>No tests performed</p>
-                    </div>
+                    <div class="empty-state"><p>Scanning continuously...</p></div>
                 </div>
             </div>
         </main>
