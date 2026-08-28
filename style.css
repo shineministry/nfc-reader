@@ -745,6 +745,17 @@ footer {
     border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
+@media (max-width: 1024px) {
+    main {
+        grid-template-columns: 350px 1fr;
+        gap: 16px;
+    }
+
+    .radar-display {
+        max-width: 320px;
+    }
+}
+
 @media (max-width: 900px) {
     main {
         grid-template-columns: 1fr;
@@ -756,35 +767,255 @@ footer {
 
     .radar-display {
         max-width: 300px;
+        margin: 0 auto;
     }
 
     .tabs {
         overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .tabs::-webkit-scrollbar {
+        display: none;
     }
 
     .tab {
-        min-width: 80px;
+        min-width: 70px;
         font-size: 0.7rem;
         padding: 8px 10px;
+        flex-shrink: 0;
     }
 
     header {
         flex-direction: column;
         gap: 12px;
     }
+
+    .info-section {
+        min-width: 0;
+    }
+
+    .tab-content {
+        min-height: 300px;
+    }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 600px) {
     .app-container {
         padding: 12px;
     }
 
+    .logo h1 {
+        font-size: 1.2rem;
+    }
+
+    .nfc-icon {
+        width: 34px;
+        height: 34px;
+    }
+
+    .nfc-icon svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .radar-display {
+        max-width: 260px;
+    }
+
     .scanner-controls {
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
     }
 
     .btn-large {
-        width: 100%;
+        grid-column: 1 / -1;
+    }
+
+    .signal-info {
+        padding: 12px;
+    }
+
+    .signal-item {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .signal-label {
+        min-width: 100%;
+        font-size: 0.7rem;
+    }
+
+    .signal-bar {
+        flex: 1;
+    }
+
+    .signal-value {
+        min-width: auto;
+    }
+
+    .info-card {
+        padding: 14px;
+    }
+
+    .detail-row {
+        padding: 10px 12px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .detail-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .detail-value {
+        font-size: 0.8rem;
+    }
+
+    .ndef-payload {
+        font-size: 0.7rem;
+        padding: 10px;
+    }
+
+    .hex-dump {
+        font-size: 0.65rem;
+        padding: 10px;
+    }
+
+    .history-item {
+        padding: 10px;
+        gap: 10px;
+    }
+
+    .history-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 0.8rem;
+    }
+
+    .history-uid {
+        font-size: 0.7rem;
+    }
+
+    .history-meta {
+        font-size: 0.6rem;
+    }
+
+    .log-container {
+        max-height: 120px;
+        font-size: 0.65rem;
+    }
+
+    .empty-state {
+        padding: 30px 16px;
+    }
+
+    .empty-state svg {
+        width: 40px;
+        height: 40px;
+    }
+
+    .empty-state p {
+        font-size: 0.9rem;
+    }
+
+    .empty-state span {
+        font-size: 0.7rem;
+    }
+}
+
+@media (max-width: 400px) {
+    .app-container {
+        padding: 8px;
+    }
+
+    .status-bar {
+        gap: 6px;
+    }
+
+    .status-badge, .mode-badge {
+        font-size: 0.65rem;
+        padding: 4px 8px;
+    }
+
+    .scanner-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .btn-large {
+        padding: 12px 16px;
+        font-size: 0.9rem;
+    }
+
+    .tabs {
+        padding: 3px;
+        gap: 1px;
+    }
+
+    .tab {
+        min-width: 60px;
+        font-size: 0.65rem;
+        padding: 6px 8px;
+    }
+
+    .chip-pinout {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+    }
+
+    .chip-pin {
+        font-size: 0.55rem;
+        padding: 4px;
+    }
+}
+
+@media (max-height: 600px) and (orientation: landscape) {
+    .radar-display {
+        max-width: 180px;
+    }
+
+    .scanner-controls {
+        flex-direction: row;
+    }
+
+    .signal-info {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .signal-item {
+        flex: 1;
+        min-width: 120px;
+    }
+
+    .log-section {
+        max-height: 100px;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+    main {
+        grid-template-columns: 380px 1fr;
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .btn {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .tab {
+        min-height: 44px;
+    }
+
+    .history-item {
+        min-height: 56px;
     }
 }
 
@@ -796,4 +1027,74 @@ footer {
     0% { transform: scale(1); }
     50% { transform: scale(1.05); border-color: var(--accent-green); }
     100% { transform: scale(1); }
+}
+
+/* Safe area support for notched devices */
+@supports (padding: max(0px)) {
+    .app-container {
+        padding-left: max(20px, env(safe-area-inset-left));
+        padding-right: max(20px, env(safe-area-inset-right));
+        padding-bottom: max(20px, env(safe-area-inset-bottom));
+    }
+
+    footer {
+        padding-bottom: max(20px, env(safe-area-inset-bottom));
+    }
+}
+
+/* Touch feedback */
+@media (hover: none) {
+    .btn:active {
+        transform: scale(0.97);
+        opacity: 0.9;
+    }
+
+    .tab:active {
+        background: rgba(59, 130, 246, 0.1);
+    }
+
+    .history-item:active {
+        background: rgba(59, 130, 246, 0.1);
+    }
+}
+
+/* Prevent text selection on interactive elements */
+.btn, .tab, .history-item, .status-badge, .mode-badge {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth scrolling on mobile */
+html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+}
+
+/* Better focus states for accessibility */
+.btn:focus-visible, .tab:focus-visible {
+    outline: 2px solid var(--accent-cyan);
+    outline-offset: 2px;
+}
+
+/* Loading state for buttons */
+.btn.loading {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+}
+
+.btn.loading::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
